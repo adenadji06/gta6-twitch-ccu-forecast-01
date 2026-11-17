@@ -12,44 +12,57 @@ Entry for the make.fun bounty: https://make.fun/bounty/gta6-twitch-ccu-forecast-
 
 ## Method
 
-Shape forecaster, built at run time from the case's own comparables
-(`main.py`, Python 3.13, standard library only, no network):
+Two shape estimators, blended 50/50 in log space, both fitted at run time
+from the case's own comparables (`main.py`, Python 3.13, standard library
+only, no network):
 
-1. Anchor on hour 1's print. Each comparable launch contributes
-   log(viewers_h / viewers_1) per hour; the median across comparables
-   is the day's shape.
-2. Only console-only launches shape the forecast — PC launches often
-   unlock simultaneously at one global instant, so their UTC-day hour 1
-   is pre-launch trickle and their ratios explode 100×; a console-only
-   rolling-midnight launch is the true analogue of GTA VI.
-3. Level tilt: launches whose hour 1 is already large grow less later
-   in the day (console comparables' own regression: slope ≈ −0.32 at
-   hour 19, ≈ 0 at hour 6). The median shape is shifted by
-   −0.30 × (log p1 − ref) × ramp(h), ramp rising 0 → 1 from hour 6 to 19.
-4. Spread per hour blends the cross-comparable dispersion (1.4826 × MAD
-   of the log-ratios) with the house baseline's 0.15·√(h−1), clipped to
-   [0.18, 0.95] log units. Falls back to all comparables, then to
-   persistence, if the console set is too thin.
+1. **Console median.** Only console-only launches (no PC in their
+   platforms) enter the shape — a PC launch often unlocks at one global
+   instant, so its UTC-day hour 1 is pre-launch trickle and its ratios
+   explode; a console launch unlocks at midnight local, rolling, the true
+   analogue of GTA VI (PS5 / Xbox Series). The shape is the median
+   log-ratio log(viewers_h / viewers_1) per hour, tilted by the level
+   effect (a launch that opens big grows less later: tilt −0.30 ×
+   (log p1 − ref), ramped in from hour 6 to hour 19). Spread blends the
+   cross-comparable dispersion (1.4826 × MAD) with the house baseline's
+   0.15·√(h−1), clipped to [0.18, 0.95].
+2. **Level regression.** Over every comparable with a full 24-hour release
+   day and hour 1 ≥ 5,000 viewers, each hour's log-ratio is regressed on
+   log hour-1 by least squares, and the case's median is read off that
+   line at its own hour-1 print (winsorised to the pool's observed range,
+   so an hour-1 above anything seen before is treated like the biggest
+   observed launch). Spread is the regression's residual standard
+   deviation per hour, floored at 0.15.
+
+The final median is the mean of the two arms' log-medians, the final spread
+the mean of their spreads. Fallbacks: the median arm uses all comparables
+when the console pool is thinner than four; the regression arm falls back to
+persistence when its pool is thinner than five; with no usable comparable at
+all the forecast is the flat house baseline.
 
 ## Local practice validation
 
-Practice answers fetched from SullyGnome (per the kit's `input/NOTICE.txt`):
-Marvel's Wolverine, Red Dead Redemption 2, God of War Ragnarök,
-Marvel's Spider-Man 2 — release-day hourly averages, hours 2–24.
+Practice answers fetched from SullyGnome (per the kit's `input/NOTICE.txt`,
+"Average viewers" dataset): Marvel's Wolverine, Red Dead Redemption 2, God
+of War Ragnarök, Marvel's Spider-Man 2 — release-day hourly averages,
+hours 2–24. A leave-one-out test over the 29 usable comparables
+(hour 1 ≥ 5,000) uses each launch as a pseudo-case, shape fitted from the
+other 28.
 
-| model | mean pinball loss | typical miss | 90% coverage |
-|---|---|---|---|
-| house baseline (starter) | 0.387 | 82.8% | 0.78 |
-| this entry | **0.207** | **38.8%** | **0.88** |
+| model | practice mean pinball loss | LOO mean pinball loss |
+|---|---|---|
+| house baseline (starter) | 0.387 | 0.360 |
+| this entry (blend) | **0.207** | **0.254** |
 
-Per case (this entry vs baseline): p00 0.353 vs 0.744, p01 0.179 vs 0.287,
-p02 0.123 vs 0.215, p03 0.173 vs 0.303. Practice is graded on past
-launches and pays nothing; it is no guide to the final.
+Per practice case (this entry vs baseline): p00 0.322 vs 0.744, p01 0.193
+vs 0.287, p02 0.134 vs 0.215, p03 0.181 vs 0.303. Practice is graded on
+past launches and pays nothing; it is no guide to the final.
 
 ## Run
 
 ```sh
-mkdir -p out && MAKEFUN_INPUT_DIR=input MAKEFUN_OUTPUT_DIR=out python3 main.py
+cd gta6-twitch-ccu-forecast-01-kit
+mkdir -p out && MAKEFUN_INPUT_DIR=input MAKEFUN_OUTPUT_DIR=out python3 ../gta6-twitch-ccu-forecast-01-entry/main.py
 ```
 
 Reads every `*.in` in the input directory, writes `<id>.out` per case.
